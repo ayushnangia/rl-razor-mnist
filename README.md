@@ -29,10 +29,10 @@ pip install torch torchvision numpy wandb matplotlib scikit-learn pyyaml tqdm
 ## Quick Start
 
 See the following scripts
-- `scripts/pretrain.sh` for pretraining on ParityMNIST + FashionMNIST
-- `scripts/finetune.sh` for fine-tuning with different methods (GRPO, SFT variants)
-- `scripts/plot.sh` for collecting results from fine-tuning runs, generating plots, and computing Table 1 metrics
-- `scripts/analyze_drift_trajectory.sh` for computing CKNNA representational drift trajectories
+- `runs/paper_replication/pretrain.sh` for pretraining on ParityMNIST + FashionMNIST
+- `runs/paper_replication/finetune{_sweep}.sh` for fine-tuning with different methods (GRPO, SFT variants)
+- `runs/paper_replication/plot.sh` for collecting results from sweep fine-tuning runs, generating plots, and computing Table 1 metrics
+- `runs/paper_replication/analyze_drift_trajectory.sh` for computing CKNNA representational drift trajectories
 
 ## The Experiment
 
