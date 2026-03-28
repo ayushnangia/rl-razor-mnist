@@ -216,6 +216,102 @@ def evaluate_model(
 # ── Distributional distances ────────────────────────────────────────────────
 
 
+def js_divergence(
+    base_model: torch.nn.Module,
+    finetuned_model: torch.nn.Module,
+    dataloader: DataLoader,
+    device: str,
+    eps: float = 1e-10,
+) -> float:
+    """Jensen-Shannon divergence between output distributions, averaged over inputs.
+
+    JS(π₀, π) = 0.5 * KL(π₀ || M) + 0.5 * KL(π || M)
+    where M = 0.5 * (π₀ + π)
+
+    Symmetric, bounded in [0, ln2], and always defined (unlike KL).
+
+    Args:
+        base_model: Pretrained base model π₀
+        finetuned_model: Fine-tuned model π
+        dataloader: DataLoader
+        device: Device
+        eps: Small value for numerical stability
+
+    Returns:
+        Average JS divergence
+    """
+    base_model.eval()
+    finetuned_model.eval()
+
+    total_js = 0.0
+    total_samples = 0
+
+    with torch.no_grad():
+        for x, _ in dataloader:
+            x = x.to(device)
+            base_probs = F.softmax(base_model(x), dim=-1).clamp(min=eps)
+            ft_probs = F.softmax(finetuned_model(x), dim=-1).clamp(min=eps)
+
+            m = 0.5 * (base_probs + ft_probs)
+            m = m.clamp(min=eps)
+
+            kl_base_m = (base_probs * (base_probs.log() - m.log())).sum(dim=-1)
+            kl_ft_m = (ft_probs * (ft_probs.log() - m.log())).sum(dim=-1)
+            js = 0.5 * kl_base_m + 0.5 * kl_ft_m
+
+            total_js += js.sum().item()
+            total_samples += x.size(0)
+
+    return total_js / total_samples
+
+
+def wasserstein_l1(
+    base_model: torch.nn.Module,
+    finetuned_model: torch.nn.Module,
+    dataloader: DataLoader,
+    device: str,
+) -> float:
+    """Wasserstein-1 (earth mover's) distance between output distributions.
+
+    For 1-D discrete distributions over ordered labels {0,...,K-1}, the
+    Wasserstein-1 distance equals the L1 norm of the difference of CDFs:
+
+        W1(P, Q) = Σ_{k=0}^{K-1} |CDF_P(k) - CDF_Q(k)|
+
+    Averaged over inputs in the dataloader.
+
+    Args:
+        base_model: Pretrained base model π₀
+        finetuned_model: Fine-tuned model π
+        dataloader: DataLoader
+        device: Device
+
+    Returns:
+        Average Wasserstein-1 distance
+    """
+    base_model.eval()
+    finetuned_model.eval()
+
+    total_w1 = 0.0
+    total_samples = 0
+
+    with torch.no_grad():
+        for x, _ in dataloader:
+            x = x.to(device)
+            base_probs = F.softmax(base_model(x), dim=-1)
+            ft_probs = F.softmax(finetuned_model(x), dim=-1)
+
+            # CDF difference trick for 1-D Wasserstein
+            base_cdf = base_probs.cumsum(dim=-1)
+            ft_cdf = ft_probs.cumsum(dim=-1)
+            w1 = (base_cdf - ft_cdf).abs().sum(dim=-1)
+
+            total_w1 += w1.sum().item()
+            total_samples += x.size(0)
+
+    return total_w1 / total_samples
+
+
 def total_variation(
     base_model: torch.nn.Module,
     finetuned_model: torch.nn.Module,
@@ -571,6 +667,8 @@ def compute_all_alternative_metrics(
         results[f"reverse_kl_{tag}"] = reverse_kl(base_model, finetuned_model, loader, device)
         results[f"total_variation_{tag}"] = total_variation(base_model, finetuned_model, loader, device)
         results[f"distribution_l2_{tag}"] = distribution_l2(base_model, finetuned_model, loader, device)
+        results[f"js_divergence_{tag}"] = js_divergence(base_model, finetuned_model, loader, device)
+        results[f"wasserstein_l1_{tag}"] = wasserstein_l1(base_model, finetuned_model, loader, device)
 
     # Weight-level changes (no data for L1/spectral; both tasks for Fisher)
     results["weight_l1"] = weight_l1(base_model, finetuned_model)
